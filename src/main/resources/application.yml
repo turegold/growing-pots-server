@@ -7,6 +7,12 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
+  # 스키마 변경은 전부 db/migration의 마이그레이션 파일로만 한다.
+  # 운영 DB가 없는 상태에서 시작하므로 baseline 없이 V1부터 적용한다.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
 
 server:
   port: 8080
