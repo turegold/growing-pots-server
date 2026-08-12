@@ -41,15 +41,20 @@ public class CourseSpecifications {
         };
     }
 
+    // LIKE '%키워드%'는 선행 와일드카드라 인덱스를 탈 수 없어 ngram Full-Text 검색
+    // (ft_course_name_code 인덱스)으로 조회한다. match_against는 FullTextFunctionContributor에서
+    // 등록한 커스텀 함수다.
     public static Specification<Course> withKeyword(String keyword) {
         if (keyword == null || keyword.isBlank()) {
             return null;
         }
-        String pattern = "%" + keyword + "%";
-        return (root, query, cb) -> cb.or(
-                cb.like(root.get("name"), pattern),
-                cb.like(root.get("courseCode"), pattern)
-        );
+        // BOOLEAN MODE 연산자(+, -, " 등)로 해석될 여지를 없애기 위해 큰따옴표를 제거하고 전체를
+        // 구문(phrase) 검색으로 감싼다. ngram 파서에서 구문 검색은 LIKE 부분 일치와 같은 결과를 준다.
+        String phrase = "\"" + keyword.replace("\"", "") + "\"";
+        return (root, query, cb) -> cb.greaterThan(
+                cb.function("match_against", Double.class,
+                        root.get("name"), root.get("courseCode"), cb.literal(phrase)),
+                0.0);
     }
 
     public static Specification<Course> withCollegeName(String collegeName) {
