@@ -10,7 +10,7 @@ import java.util.List;
 
 // 같은 필드 안의 값끼리는 OR(합집합), 서로 다른 필드끼리는 AND(교집합)로 결합한다.
 public record CourseSearchRequest(
-        @Schema(description = "과목명 또는 학수번호 부분 일치 검색어") String keyword,
+        @Schema(description = "과목명 또는 학수번호 부분 일치 검색어 (2글자 이상)") String keyword,
         @Schema(description = "단과대학명 필터") String collegeName,
         @Schema(description = "학과 PK 필터") Long departmentId,
         @Schema(description = "이수구분 필터 (다중 선택, OR 결합). "

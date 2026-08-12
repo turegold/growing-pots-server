@@ -46,6 +46,13 @@ public class CourseService {
 
     @Transactional(readOnly = true)
     public CourseSearchResponse searchCourses(Long memberId, CourseSearchRequest request) {
+        // 검색은 ngram Full-Text 인덱스(2글자 단위 색인)를 타므로 1글자 검색어는 결과가 없는 게
+        // 아니라 검색 자체가 불가능하다. 조용히 0건을 주는 대신 요청 단계에서 막는다.
+        String keyword = request.keyword();
+        if (keyword != null && !keyword.isBlank() && keyword.trim().length() < 2) {
+            throw new BaseException(ErrorCode.COURSE_SEARCH_KEYWORD_TOO_SHORT);
+        }
+
         StudentProfile profile = studentProfileRepository.findWithDetailsByMemberId(memberId)
                 .orElseThrow(() -> new BaseException(ErrorCode.STUDENT_PROFILE_NOT_FOUND));
         School school = profile.getSchool();

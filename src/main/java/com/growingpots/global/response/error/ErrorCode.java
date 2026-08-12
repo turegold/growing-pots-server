@@ -37,6 +37,7 @@ public enum ErrorCode implements ErrorType {
     UNIVERSITY_NOT_FOUND(HttpStatus.NOT_FOUND, "UNIV_001", "존재하지 않는 학교입니다."),
     MAJOR_NOT_FOUND(HttpStatus.NOT_FOUND, "UNIV_002", "존재하지 않는 학과입니다."),
     DEPARTMENT_NOT_IN_SCHOOL(HttpStatus.BAD_REQUEST, "UNIV_003", "해당 학교에 속하지 않는 학과입니다."),
+    COURSE_SEARCH_KEYWORD_TOO_SHORT(HttpStatus.BAD_REQUEST, "UNIV_004", "검색어는 2글자 이상 입력해야 합니다."),
 
     // Transcript
     PDF_PARSING_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "TRANS_001", "PDF 파싱에 실패했습니다."),
