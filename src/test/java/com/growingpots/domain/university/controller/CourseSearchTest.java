@@ -191,6 +191,29 @@ class CourseSearchTest {
                 .andExpect(jsonPath("$.data.courses.length()").value(2));
     }
 
+    // 검색은 ngram Full-Text 인덱스(2글자 단위 색인)를 타므로 1글자 검색어는 항상 0건이 된다.
+    // 조용히 빈 결과를 주는 대신 요청 단계에서 400으로 막는다.
+    @Test
+    void keyword가_2글자_미만이면_400_UNIV_004를_반환한다() throws Exception {
+        School school = schoolRepository.save(School.builder().name("경희대학교-9117").build());
+        Department cs = departmentRepository.save(Department.builder()
+                .school(school).college("공과대학").name("컴퓨터공학과").build());
+        StudentProfile studentProfile = onboardedStudent("9117", cs);
+
+        mockMvc.perform(get("/api/v1/courses")
+                        .param("keyword", "웹")
+                        .with(authentication(authenticationOf(studentProfile.getMember().getId()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("UNIV_004"));
+
+        // 공백을 붙여 2글자를 채운 것도 실질 1글자이므로 막는다.
+        mockMvc.perform(get("/api/v1/courses")
+                        .param("keyword", "웹 ")
+                        .with(authentication(authenticationOf(studentProfile.getMember().getId()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("UNIV_004"));
+    }
+
     @Test
     void 이수영역_다중선택은_OR로_학년_필터와는_AND로_결합된다() throws Exception {
         School school = schoolRepository.save(School.builder().name("경희대학교-9103").build());
