@@ -45,15 +45,29 @@ if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
 # {profile} {dept} {division}은 실행 시점에 DB에서 실재하는 ID로 치환된다.
 # 하드코딩하면 시드를 다시 만들 때마다 AUTO_INCREMENT가 밀려 0행을 측정하게 된다.
 QUERIES = [
-    ("Q1", "과목 키워드 검색 (LIKE)", "CourseSpecifications.withKeyword",
+    ("Q1", "과목 키워드 검색 — 조회 (LIKE)", "CourseSpecifications.withKeyword",
      "SELECT c.id FROM course c "
      "WHERE c.school_id = 1 AND c.is_active = 1 "
      "AND (c.name LIKE '%디자인%' OR c.course_code LIKE '%디자인%') LIMIT 20"),
 
-    ("Q1F", "과목 키워드 검색 (Full-Text)", "ngram Full-Text 인덱스 적용 시에만 측정",
+    # Page<Course>는 조회와 별개로 count 쿼리를 반드시 한 번 더 날린다(CourseSpecifications.
+    # withFetchedAssociations가 query.getResultType()==Long일 때 fetch join을 건너뛰는 게 그 증거).
+    # count는 LIMIT이 없어 조건에 맞는 행을 전부 훑으므로, LIKE 비용의 진짜 크기는 이 쿼리에 있다.
+    # Q1만 보고 "많이 개선됐다"고 하면 정직한 측정이 아니다.
+    ("Q1C", "과목 키워드 검색 — count (LIKE)", "CourseRepository.findAll(spec, pageable) 내부 count",
+     "SELECT COUNT(c.id) FROM course c "
+     "WHERE c.school_id = 1 AND c.is_active = 1 "
+     "AND (c.name LIKE '%디자인%' OR c.course_code LIKE '%디자인%')"),
+
+    ("Q1F", "과목 키워드 검색 — 조회 (Full-Text)", "ngram Full-Text 인덱스 적용 시에만 측정",
      "SELECT c.id FROM course c "
      "WHERE c.school_id = 1 AND c.is_active = 1 "
      "AND MATCH(c.name) AGAINST('디자인' IN BOOLEAN MODE) LIMIT 20"),
+
+    ("Q1FC", "과목 키워드 검색 — count (Full-Text)", "ngram Full-Text 인덱스 적용 시에만 측정",
+     "SELECT COUNT(c.id) FROM course c "
+     "WHERE c.school_id = 1 AND c.is_active = 1 "
+     "AND MATCH(c.name) AGAINST('디자인' IN BOOLEAN MODE)"),
 
     ("Q2", "이수내역 status 필터", "findCourseIdsByStudentProfileAndStatusIn",
      "SELECT sc.course_id FROM student_course sc "
@@ -308,12 +322,19 @@ def main():
                   f" rows {fmt_int(row['rows']):>6}  key {key_disp}")
             if row["extra"]:
                 print(f"{C['blue']}│{C['reset']}              {C['dim']}{row['extra'][:62]}{C['reset']}")
-        eff = ""
-        if read and stats["rows_returned"]:
-            ratio = stats["rows_returned"] / read * 100
-            eff = f"  (효율 {ratio:.1f}%)"
-        print(f"{C['blue']}│{C['reset']}  스캔       {C['bold']}{fmt_int(read)}{C['reset']}행 읽어 "
-              f"{fmt_int(stats['rows_returned'])}행 반환{C['dim']}{eff}{C['reset']}")
+        # COUNT 집계는 결과가 항상 1행이라 "반환 행"이 스캔 규모를 말해주지 않는다.
+        # LIMIT 없는 count는 조건에 맞는 행 전부를 훑어야 끝나므로, 스캔한 행 수 자체가 비용이다.
+        is_count = q.strip().upper().startswith("SELECT COUNT")
+        if is_count:
+            print(f"{C['blue']}│{C['reset']}  스캔       {C['bold']}{fmt_int(read)}{C['reset']}행 훑음 "
+                  f"{C['dim']}(COUNT 집계 — LIMIT 없이 조건에 맞는 행 전부){C['reset']}")
+        else:
+            eff = ""
+            if read and stats["rows_returned"]:
+                ratio = stats["rows_returned"] / read * 100
+                eff = f"  (효율 {ratio:.1f}%)"
+            print(f"{C['blue']}│{C['reset']}  스캔       {C['bold']}{fmt_int(read)}{C['reset']}행 읽어 "
+                  f"{fmt_int(stats['rows_returned'])}행 반환{C['dim']}{eff}{C['reset']}")
         print(f"{C['blue']}│{C['reset']}  응답시간   min {min(t):.2f}ms   "
               f"{C['bold']}p50 {pct(t, 50):.2f}ms{C['reset']}   p95 {pct(t, 95):.2f}ms")
         print(f"{C['blue']}└{C['reset']}")
