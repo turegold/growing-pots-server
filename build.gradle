@@ -25,12 +25,18 @@ repositories {
 	mavenCentral()
 }
 
-// 소스 코드를 Sentry에 업로드해 스택트레이스에서 실제 코드 라인을 볼 수 있게 함(CI에서만 authToken 주입).
+// 소스 코드를 Sentry에 업로드해 스택트레이스에서 실제 코드 라인을 볼 수 있게 함(CI에서만 주입).
+// 셋 중 하나라도 비면 업로드 태스크가 빌드를 실패시키므로, 전부 채워졌을 때만 켠다.
+// GitHub Actions는 없는 시크릿을 빈 문자열로 주입하므로 null이 아니라 blank 여부로 판단해야 한다.
+def sentryAuthToken = System.getenv("SENTRY_AUTH_TOKEN")
+def sentryOrg = System.getenv("SENTRY_ORG")
+def sentryProject = System.getenv("SENTRY_PROJECT")
+
 sentry {
-	includeSourceContext = true
-	org = "growingpots"
-	projectName = "java-spring-boot"
-	authToken = System.getenv("SENTRY_AUTH_TOKEN")
+	includeSourceContext = sentryAuthToken?.trim() && sentryOrg?.trim() && sentryProject?.trim()
+	org = sentryOrg
+	projectName = sentryProject
+	authToken = sentryAuthToken
 }
 
 dependencies {
