@@ -9,4 +9,4 @@ DROP INDEX idx_sc_profile_status_course ON student_course;
 DROP INDEX idx_sc_profile_division ON student_course;
 DROP INDEX idx_course_dept_active ON course;
 DROP INDEX idx_course_school_active ON course;
-DROP INDEX ft_course_name ON course;
+DROP INDEX ft_course_name_code ON course;

@@ -10,11 +10,10 @@ Full-Text는 count 쿼리 비용을 없애주지만(02-2 측정 결과), 결과 
 검증 대상 (실제 데이터 특성을 반영해 고른 케이스)
 - 일반 키워드: 여러 과목에 흔히 나오는 substring
 - 단어 경계 없는 substring: ngram이 어절 중간도 찾는지
-- 1글자 검색어: ngram_token_size 기본값(2) 때문에 아예 안 잡힐 수 있는 경계 조건
-- 띄어쓰기 포함 이름을 겨냥한 검색어
-- course_code 전용 검색어: Full-Text 인덱스가 name에만 걸려 있어
-  LIKE는 찾는데 Full-Text는 못 찾는 게 구조적으로 당연한 케이스
-  (동등성 실패가 아니라 "커버 범위 차이"로 분류해야 한다)
+- 1글자 검색어: ngram_token_size 기본값(2) 때문에 색인 토큰이 없어 항상 0건인 알려진
+  한계 — 애플리케이션이 2글자 미만 검색어를 400으로 차단하는 근거다
+- course_code 검색어: 복합 인덱스 ft_course_name_code가 name과 course_code를 함께
+  커버하므로 학수번호 검색도 LIKE와 완전히 같아야 한다 (숫자, 영문+숫자 경계 포함)
 - 존재하지 않는 검색어: 둘 다 0건이어야 함
 """
 
@@ -74,10 +73,14 @@ CASES = [
     ("실습", "실습", "일반 (흔한 접미어)"),
     ("자인", "자인", "단어 중간 substring (디자인의 뒤 2글자)"),
     ("영상프로젝트", "영상프로젝트", "복합어 (여러 과목명의 앞부분과 일치)"),
-    ("웹", "웹", "1글자 — ngram_token_size(2) 미만"),
+    ("웹", "웹", "1글자 — ngram_token_size(2) 미만, 앱에서 400 차단"),
     ("공학수학", "공학수학", "정확히 한 과목명과 일치"),
     ("존재하지않는검색어", "존재하지않는검색어", "매칭 없음 (둘 다 0건이어야 정상)"),
-    ("CHE", "CHE", "course_code 전용 — Full-Text가 name만 커버해 구조적으로 못 찾음"),
+    ("CHE", "CHE", "course_code 영문 접두"),
+    ("453", "453", "course_code 숫자 부분"),
+    ("E45", "E45", "course_code 영문·숫자 경계에 걸친 substring"),
+    ("03311", "03311", "course_code 5자리 (ngram 토큰 4개의 구문 검색)"),
+    ("10", "10", "name·course_code 양쪽에 다 흔한 검색어"),
 ]
 
 
@@ -89,21 +92,23 @@ def like_query(term):
     )
 
 
+# 애플리케이션(CourseSpecifications.withKeyword)과 동일한 형태: 큰따옴표를 벗긴 뒤
+# 구문(phrase) 검색으로 감싼다. BOOLEAN MODE 연산자(+, - 등)로 해석될 여지를 없앤다.
 def ft_query(term):
     t = term.replace("'", "''").replace('"', '')
     return (
         f"SELECT c.id FROM course c WHERE c.school_id = 1 AND c.is_active = 1 "
-        f"AND MATCH(c.name) AGAINST('{t}' IN BOOLEAN MODE)"
+        f"AND MATCH(c.name, c.course_code) AGAINST('\"{t}\"' IN BOOLEAN MODE)"
     )
 
 
 def main():
     ft_exists, _ = sql(
         "SELECT COUNT(*) FROM information_schema.statistics "
-        f"WHERE table_schema='{DB}' AND table_name='course' AND index_name='ft_course_name'"
+        f"WHERE table_schema='{DB}' AND table_name='course' AND index_name='ft_course_name_code'"
     )
     if ft_exists.strip().split("\n")[-1] == "0":
-        print(f"{C['red']}ft_course_name 인덱스가 없습니다.{C['reset']} "
+        print(f"{C['red']}ft_course_name_code 인덱스가 없습니다.{C['reset']} "
               f"먼저 적용하세요: mysql -u root -p {DB} < docs/perf/indexes_add.sql")
         sys.exit(1)
 
@@ -119,7 +124,7 @@ def main():
     print(header)
     print(f"  {'-' * 76}")
 
-    summary = {"동일": 0, "커버범위차이(예상됨)": 0, "불일치(문제)": 0}
+    summary = {"동일": 0, "1글자한계(예상됨)": 0, "불일치(문제)": 0}
 
     for label, term, note in CASES:
         like_ids, lerr = ids(like_query(term))
@@ -133,23 +138,16 @@ def main():
         only_ft = ft_ids - like_ids
         diff = len(only_like) + len(only_ft)
 
-        # course_code 전용 케이스는 Full-Text가 name만 커버하므로 차이가 "구조적으로 정상"이다.
-        # 그 차이가 전부 course_code 매칭에서 온 것인지 확인해서 분류한다.
-        is_code_only_case = "course_code" in note
-        expected_gap = False
-        if is_code_only_case and only_like:
-            code_matched, _ = ids(
-                f"SELECT c.id FROM course c WHERE c.school_id=1 AND c.is_active=1 "
-                f"AND c.course_code LIKE '%{term}%' AND c.name NOT LIKE '%{term}%'"
-            )
-            expected_gap = only_like == (code_matched or set())
+        # 1글자 검색어는 ngram_token_size(2) 미만이라 색인 토큰 자체가 없어 Full-Text가
+        # 항상 0건이다. 알려진 구조적 한계이며, 애플리케이션은 2글자 미만을 400으로 차단한다.
+        expected_gap = len(term) < 2 and len(ft_ids) == 0
 
         if diff == 0:
             verdict = f"{C['green']}✅ 동일{C['reset']}"
             summary["동일"] += 1
         elif expected_gap:
-            verdict = f"{C['yellow']}⚠️  예상된 차이 (course_code){C['reset']}"
-            summary["커버범위차이(예상됨)"] += 1
+            verdict = f"{C['yellow']}⚠️  예상된 차이 (1글자){C['reset']}"
+            summary["1글자한계(예상됨)"] += 1
         else:
             verdict = f"{C['red']}❌ 불일치{C['reset']}"
             summary["불일치(문제)"] += 1
@@ -167,16 +165,15 @@ def main():
 
     print()
     print(f"  {C['bold']}요약{C['reset']}  동일 {summary['동일']}건 · "
-          f"예상된 차이(course_code) {summary['커버범위차이(예상됨)']}건 · "
+          f"예상된 차이(1글자) {summary['1글자한계(예상됨)']}건 · "
           f"{C['red'] if summary['불일치(문제)'] else ''}불일치 {summary['불일치(문제)']}건{C['reset']}")
     print()
     if summary["불일치(문제)"] > 0:
         print(f"  {C['red']}⚠️  실제 결과 불일치가 있습니다. Full-Text 채택 전 원인을 확인하세요.{C['reset']}")
     else:
-        print(f"  {C['dim']}course_code 매칭은 Full-Text 인덱스가 name에만 걸려 있어 나는 구조적 차이다.{C['reset']}")
-        print(f"  {C['dim']}name 검색만 놓고 보면 완전히 동등하다. course_code까지 커버하려면{C['reset']}")
-        print(f"  {C['dim']}course_code에도 별도 Full-Text 인덱스를 추가하거나, course_code는{C['reset']}")
-        print(f"  {C['dim']}학수번호라 접두 검색(LIKE '코드%')으로 충분한지 검토가 필요하다.{C['reset']}")
+        print(f"  {C['dim']}2글자 이상 검색어는 name·course_code 모두 LIKE와 결과가 완전히 동등하다.{C['reset']}")
+        print(f"  {C['dim']}1글자 검색어만 ngram 색인 토큰이 없어 검색 불가 — 애플리케이션이{C['reset']}")
+        print(f"  {C['dim']}2글자 미만 검색어를 요청 단계에서 400으로 차단하는 근거다.{C['reset']}")
     print()
 
 

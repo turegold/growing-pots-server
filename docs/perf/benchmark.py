@@ -59,15 +59,18 @@ QUERIES = [
      "WHERE c.school_id = 1 AND c.is_active = 1 "
      "AND (c.name LIKE '%디자인%' OR c.course_code LIKE '%디자인%')"),
 
+    # 큰따옴표로 감싼 구문(phrase) 검색 — 애플리케이션(CourseSpecifications.withKeyword)이
+    # 보내는 형태와 동일하게 측정한다. ngram 파서에서 구문 검색은 LIKE '%키워드%' 부분 일치와
+    # 같은 결과를 준다 (verify_fulltext_equivalence.py로 검증).
     ("Q1F", "과목 키워드 검색 — 조회 (Full-Text)", "ngram Full-Text 인덱스 적용 시에만 측정",
      "SELECT c.id FROM course c "
      "WHERE c.school_id = 1 AND c.is_active = 1 "
-     "AND MATCH(c.name) AGAINST('디자인' IN BOOLEAN MODE) LIMIT 20"),
+     "AND MATCH(c.name, c.course_code) AGAINST('\"디자인\"' IN BOOLEAN MODE) LIMIT 20"),
 
     ("Q1FC", "과목 키워드 검색 — count (Full-Text)", "ngram Full-Text 인덱스 적용 시에만 측정",
      "SELECT COUNT(c.id) FROM course c "
      "WHERE c.school_id = 1 AND c.is_active = 1 "
-     "AND MATCH(c.name) AGAINST('디자인' IN BOOLEAN MODE)"),
+     "AND MATCH(c.name, c.course_code) AGAINST('\"디자인\"' IN BOOLEAN MODE)"),
 
     ("Q2", "이수내역 status 필터", "findCourseIdsByStudentProfileAndStatusIn",
      "SELECT sc.course_id FROM student_course sc "
