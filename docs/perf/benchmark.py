@@ -312,12 +312,14 @@ def main():
         }
 
         for i, row in enumerate(plan):
-            label = "실행계획" if i == 0 else "        "
+            # 바깥의 label(before/after, 파일명·비교표에 쓰임)과 이름이 겹치면 안 된다 -
+            # 실제로 겹쳐서 마지막 쿼리 처리 후 바깥 label이 "        "로 오염되는 버그가 있었다.
+            row_label = "실행계획" if i == 0 else "        "
             # 작은 테이블(수십 행)의 풀스캔은 최적이므로 빨간색으로 겁주지 않는다.
             big_scan = row["type"] == "ALL" and float(row.get("rows") or 0) > 100
             type_col = C["red"] if big_scan else (C["yellow"] if row["type"] == "ALL" else C["green"])
             key_disp = row["key"] if row["key"] not in ("NULL", "") else f"{C['dim']}—{C['reset']}"
-            print(f"{C['blue']}│{C['reset']}  {label}   {C['dim']}{row['table']:<4}{C['reset']}"
+            print(f"{C['blue']}│{C['reset']}  {row_label}   {C['dim']}{row['table']:<4}{C['reset']}"
                   f" type {type_col}{pad(row['type'], 12)}{C['reset']}"
                   f" rows {fmt_int(row['rows']):>6}  key {key_disp}")
             if row["extra"]:
