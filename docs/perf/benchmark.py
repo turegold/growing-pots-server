@@ -74,12 +74,17 @@ QUERIES = [
      "AND sc.status IN ('COMPLETED','IN_PROGRESS')"),
 ]
 
+# {profile}은 실행 시점에 치환된다. 존재하지 않는 ID를 쓰면 FK 위반으로 조용히 실패한다.
 WRITE_QUERY = (
     "INSERT INTO student_course "
     "(created_at, updated_at, student_profile_id, course_id, applied_division_id, "
-    " raw_course_name, credit, taken_year, taken_semester, is_retake, status, source, display_order) "
-    "SELECT NOW(6), NOW(6), 1, c.id, c.default_division_id, c.name, c.credit, "
-    "2024, 'FIRST', 0, 'COMPLETED', 'PDF', 0 FROM course c LIMIT 500"
+    " raw_course_code, raw_course_name, credit, taken_year, taken_semester, is_retake, status, source, display_order) "
+    "SELECT NOW(6), NOW(6), {profile}, c.id, c.default_division_id, 'BENCHWRITE', c.name, c.credit, "
+    "2099, 'FIRST', 0, 'COMPLETED', 'PDF', 0 FROM course c LIMIT 500"
+)
+# 측정용으로 넣은 행만 정확히 지운다(taken_year=2099 + 전용 마커).
+WRITE_CLEANUP = (
+    "DELETE FROM student_course WHERE taken_year = 2099 AND raw_course_code = 'BENCHWRITE'"
 )
 
 
@@ -114,15 +119,19 @@ def explain_plan(q):
     lines = out.strip().split("\n")
     if len(lines) < 2:
         return None, "no plan"
-    hdr, row = lines[0].split("\t"), lines[1].split("\t")
-    d = dict(zip(hdr, row))
-    return {
-        "type": d.get("type", "?"),
-        "key": d.get("key", "NULL"),
-        "rows": d.get("rows", "?"),
-        "filtered": d.get("filtered", "?"),
-        "extra": d.get("Extra", ""),
-    }, None
+    hdr = lines[0].split("\t")
+    rows = []
+    for line in lines[1:]:
+        d = dict(zip(hdr, line.split("\t")))
+        rows.append({
+            "table": d.get("table", "?"),
+            "type": d.get("type", "?"),
+            "key": d.get("key", "NULL"),
+            "rows": d.get("rows", "?"),
+            "filtered": d.get("filtered", "?"),
+            "extra": d.get("Extra", ""),
+        })
+    return rows, None
 
 
 ANALYZE_RE = re.compile(r"actual time=([\d.]+)\.\.([\d.]+) rows=([\d.]+) loops=(\d+)")
@@ -163,17 +172,19 @@ def handler_rows(q):
     return total
 
 
-def measure_write():
-    sql("DELETE FROM student_course WHERE student_profile_id = 1 AND taken_year = 2024 AND raw_course_code IS NULL")
+def measure_write(params):
+    q = WRITE_QUERY.format(**params)
+    sql(WRITE_CLEANUP)
     durations = []
     for _ in range(5):
         t0 = time.perf_counter()
-        _, err = sql(WRITE_QUERY)
-        durations.append((time.perf_counter() - t0) * 1000)
+        _, err = sql(q)
+        elapsed = (time.perf_counter() - t0) * 1000
         if err:
-            return None
-        sql("DELETE FROM student_course WHERE student_profile_id = 1 AND taken_year = 2024 AND raw_course_code IS NULL")
-    return durations
+            return None, err.split("\n")[0][:70]
+        durations.append(elapsed)
+        sql(WRITE_CLEANUP)
+    return durations, None
 
 
 def resolve_params():
@@ -286,12 +297,17 @@ def main():
             "min": min(t), "p50": pct(t, 50), "p95": pct(t, 95),
         }
 
-        key_disp = plan["key"] if plan["key"] not in ("NULL", "") else f"{C['red']}없음{C['reset']}"
-        type_col = C["red"] if plan["type"] == "ALL" else C["green"]
-        print(f"{C['blue']}│{C['reset']}  실행계획   type {type_col}{plan['type']:<8}{C['reset']}"
-              f" key {key_disp}")
-        if plan["extra"]:
-            print(f"{C['blue']}│{C['reset']}              {C['dim']}{plan['extra'][:60]}{C['reset']}")
+        for i, row in enumerate(plan):
+            label = "실행계획" if i == 0 else "        "
+            # 작은 테이블(수십 행)의 풀스캔은 최적이므로 빨간색으로 겁주지 않는다.
+            big_scan = row["type"] == "ALL" and float(row.get("rows") or 0) > 100
+            type_col = C["red"] if big_scan else (C["yellow"] if row["type"] == "ALL" else C["green"])
+            key_disp = row["key"] if row["key"] not in ("NULL", "") else f"{C['dim']}—{C['reset']}"
+            print(f"{C['blue']}│{C['reset']}  {label}   {C['dim']}{row['table']:<4}{C['reset']}"
+                  f" type {type_col}{pad(row['type'], 12)}{C['reset']}"
+                  f" rows {fmt_int(row['rows']):>6}  key {key_disp}")
+            if row["extra"]:
+                print(f"{C['blue']}│{C['reset']}              {C['dim']}{row['extra'][:62]}{C['reset']}")
         eff = ""
         if read and stats["rows_returned"]:
             ratio = stats["rows_returned"] / read * 100
@@ -304,14 +320,14 @@ def main():
         print()
 
     print(f"{C['mag']}┌─ {C['bold']}W1{C['reset']}{C['mag']} · 쓰기 비용 (student_course 500행 INSERT){C['reset']}")
-    wd = measure_write()
+    wd, werr = measure_write(params)
     if wd:
         results["W1"] = {"title": "500행 INSERT", "min": min(wd), "p50": pct(wd, 50), "p95": pct(wd, 95)}
         print(f"{C['mag']}│{C['reset']}  {C['dim']}인덱스는 읽기를 빠르게 하는 대신 쓰기를 느리게 한다{C['reset']}")
         print(f"{C['mag']}│{C['reset']}  소요시간   min {min(wd):.1f}ms   {C['bold']}p50 {pct(wd, 50):.1f}ms{C['reset']}"
               f"   p95 {pct(wd, 95):.1f}ms")
     else:
-        print(f"{C['mag']}│{C['reset']}  {C['red']}측정 실패{C['reset']}")
+        print(f"{C['mag']}│{C['reset']}  {C['red']}측정 실패{C['reset']} {C['dim']}{werr}{C['reset']}")
     print(f"{C['mag']}└{C['reset']}")
     print()
 
