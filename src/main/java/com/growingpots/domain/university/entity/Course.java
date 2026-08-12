@@ -12,6 +12,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -20,6 +22,10 @@ import lombok.NoArgsConstructor;
 @Entity
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+// 학수번호는 학교 단위로 유일하다. 실제 제약은 V1__init.sql에 있고, 여기서는 그 사실을 명시만 한다
+// (Hibernate의 ddl-auto: validate는 유니크 제약까지는 검증하지 않는다).
+@Table(uniqueConstraints = @UniqueConstraint(
+        name = "uk_course_school_code", columnNames = {"school_id", "course_code"}))
 public class Course extends BaseTimeEntity {
 
     @Id

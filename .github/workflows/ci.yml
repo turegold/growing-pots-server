@@ -31,4 +31,56 @@ jobs:
       - name: Build with Gradle
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: ./gradlew clean build
+
+  # 테스트는 H2 + ddl-auto:create-drop이라 Flyway가 꺼져 있다(application-test.yml).
+  # 즉 마이그레이션 파일이 실제로 실행되는지는 테스트로 검증되지 않으므로,
+  # 실제 MySQL을 띄워 V1부터 순서대로 적용되는지 + 적용 결과가 엔티티와 일치하는지 확인한다.
+  migration:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-password
+          MYSQL_DATABASE: growingpots
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -pci-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x gradlew
+
+      # 빈 DB에서 시작해 Flyway가 마이그레이션을 적용하고,
+      # 그 결과를 Hibernate ddl-auto:validate가 검증한다.
+      # 마이그레이션 없이 엔티티만 바뀌었으면 여기서 부팅이 실패한다.
+      - name: 마이그레이션 적용 및 스키마 검증
+        env:
+          DB_PASSWORD: ci-password
+          JWT_SECRET: ci-jwt-secret-must-be-at-least-32-characters
+        run: |
+          ./gradlew bootRun --args="\
+            --spring.profiles.active=local \
+            --spring.main.web-application-type=none \
+            --server.port=0"
