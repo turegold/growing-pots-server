@@ -21,13 +21,13 @@ jwt:
   refresh-expiration: 1209600000
 
 app:
-  base-url: https://growing-pots.p-e.kr:8081
+  base-url: ${APP_BASE_URL:http://localhost:18081}
 
 cors:
-  allowed-origins: https://dev.growingpots.kr,https://www.growingpots.kr,https://growingpots.kr,http://localhost:3000
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
 
 discord:
-  webhook-url: ${DISCORD_WEBHOOK_URL}
+  webhook-url: ${DISCORD_WEBHOOK_URL:}
 
 logging:
   level:

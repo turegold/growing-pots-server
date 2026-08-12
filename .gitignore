@@ -49,3 +49,7 @@ data/
 .env
 .env.*
 application-secret.yml
+
+### Local scratch ###
+tmp/
+CLAUDE.md

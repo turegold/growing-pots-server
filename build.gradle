@@ -26,10 +26,12 @@ repositories {
 }
 
 // 소스 코드를 Sentry에 업로드해 스택트레이스에서 실제 코드 라인을 볼 수 있게 함(CI에서만 authToken 주입).
+// authToken이 없으면 업로드 태스크가 빌드를 실패시키므로, 토큰이 있을 때만 켠다.
+// 업로드 대상 org/project는 환경변수로 주입한다.
 sentry {
-	includeSourceContext = true
-	org = "growingpots"
-	projectName = "java-spring-boot"
+	includeSourceContext = System.getenv("SENTRY_AUTH_TOKEN") != null
+	org = System.getenv("SENTRY_ORG")
+	projectName = System.getenv("SENTRY_PROJECT")
 	authToken = System.getenv("SENTRY_AUTH_TOKEN")
 }
 
