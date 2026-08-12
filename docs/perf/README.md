@@ -11,6 +11,9 @@ mysql -u root -p -e "CREATE DATABASE growingpots_perf CHARACTER SET utf8mb4 COLL
 DB_NAME=growingpots_perf ./gradlew bootRun \
   --args="--spring.main.web-application-type=none --server.port=0"
 
+# FK 지지 인덱스 안정화 (아래 "FK 제약과 인덱스 교체" 참고) — 반드시 seed/add보다 먼저
+mysql -u root -p growingpots_perf < docs/perf/prepare_indexes.sql
+
 # 시드 데이터 (course 5,000 / student_course 60,000)
 mysql -u root -p growingpots_perf < docs/perf/seed_perf_data.sql
 ```
@@ -63,3 +66,16 @@ mysql -u root -p growingpots_perf < docs/perf/indexes_drop.sql
 
 - 결과 JSON(`results/`)은 gitignore 대상이다. 머신마다 값이 달라 저장소에 남길 이유가 없다.
 - `indexes_add.sql`은 **실험용**이다. 효과가 검증된 인덱스만 골라 정식 마이그레이션(`V2__*.sql`)으로 옮긴다.
+- `prepare_indexes.sql`을 건너뛰면 `indexes_drop.sql`이 `Cannot drop index ...: needed in a foreign key constraint`로 막힌다. 바로 아래 항목 참고.
+
+## FK 제약과 인덱스 교체 (겪은 문제)
+
+`student_course.student_profile_id`와 `course.offering_department_id`는 V1 마이그레이션이 FK 제약을 걸 때 인덱스가 하나도 없어서, MySQL이 자동으로 단일 컬럼 인덱스를 만들어 FK를 지원했다.
+
+이 자동 생성 인덱스는 MySQL 내부적으로 "언제든 대체 가능한 것"으로 취급된다. 그 컬럼을 리딩 컬럼으로 하는 더 넓은 인덱스(`idx_sc_profile_division`, `idx_course_dept_active`)를 추가하면, **자동 생성 인덱스는 별도 명령 없이 그 자리에서 조용히 사라지고** FK는 새 인덱스에 갈아탄다. 그러면 그 새 인덱스가 FK를 혼자 떠받치게 되어, `indexes_drop.sql`로 되돌리려는 순간 다음 에러로 막힌다.
+
+```
+ERROR 1553 (HY000): Cannot drop index 'idx_sc_profile_division': needed in a foreign key constraint
+```
+
+`prepare_indexes.sql`은 이 두 인덱스를 **명시적으로(`CREATE INDEX`)** 다시 만들어 "자동 생성" 딱지를 뗀다. 이렇게 만든 인덱스는 이후 `indexes_add.sql`/`indexes_drop.sql`을 몇 번을 오가도 사라지지 않는다(실측 확인). 새 `growingpots_perf`를 만들 때마다 **딱 한 번만** 실행하면 된다.

@@ -1,6 +1,9 @@
 -- indexes_add.sql 되돌리기. before/after를 반복 측정하기 위한 것이다.
 -- IF EXISTS를 쓰지 않는 이유: 없는 인덱스를 지우려 할 때 조용히 넘어가면
 -- 어떤 상태에서 측정했는지 알 수 없게 된다. 에러로 드러나는 편이 낫다.
+--
+-- 전제: prepare_indexes.sql을 먼저 한 번 실행해 뒀어야 한다 (README 참고).
+-- 그걸 안 했다면 이 스크립트가 "needed in a foreign key constraint" 에러로 막힌다.
 
 DROP INDEX idx_sc_profile_status_course ON student_course;
 DROP INDEX idx_sc_profile_division ON student_course;
