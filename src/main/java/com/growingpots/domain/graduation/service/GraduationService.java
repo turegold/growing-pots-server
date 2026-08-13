@@ -132,17 +132,47 @@ public class GraduationService {
         Set<Long> allMajorDeptIds = majors.stream()
                 .map(m -> m.getDepartment().getId())
                 .collect(Collectors.toSet());
+
+        // 아래 전공별 루프 안에서 반복 호출하면 같은 데이터를 전공 수만큼 다시 조회하게 된다(N+1).
+        // 전공과 무관한 조회(이수내역)는 한 번만, 전공별로 값이 달라지는 조회(요약/자격증/학과 독립
+        // 졸업요건)는 IN 절 배치 조회로 루프 밖에서 미리 가져온다.
+        Map<Long, GraduationAnalysisSummary> summaryByMajorId = graduationAnalysisSummaryRepository
+                .findByStudentMajorIn(majors).stream()
+                .collect(Collectors.toMap(s -> s.getStudentMajor().getId(), s -> s));
+        Map<Long, List<CertResult>> certsByMajorId = certResultRepository.findByStudentMajorIn(majors).stream()
+                .collect(Collectors.groupingBy(c -> c.getStudentMajor().getId()));
+        List<Department> majorDepartments = majors.stream().map(StudentMajor::getDepartment).distinct().toList();
+        List<RequirementCourse> requirementCoursesForAllDepts = requirementCourseRepository
+                .findGraduationRequiredByDepartmentIn(majorDepartments, profile.getAdmissionYear());
+        Map<Long, List<RequirementCourse>> requirementCoursesByDeptId = requirementCoursesForAllDepts.stream()
+                .collect(Collectors.groupingBy(rc -> rc.getDepartment().getId()));
+        List<RequirementCourseItem> requirementItemsForAllDepts = requirementCoursesForAllDepts.isEmpty()
+                ? List.of()
+                : requirementCourseItemRepository.findWithCourseByRequirementCourseIn(requirementCoursesForAllDepts);
+        Map<Long, List<RequirementCourseItem>> requirementItemsByRequirementCourseId = requirementItemsForAllDepts
+                .stream().collect(Collectors.groupingBy(item -> item.getRequirementCourse().getId()));
+        List<StudentCourse> studentCourses = studentCourseRepository.findWithCourseByStudentProfile(profile);
+
         List<StudentMajorContext> majorContexts = majors.stream()
                 .map(major -> {
-                    GraduationAnalysisSummary summary = requireSummary(major);
-                    GraduationRequiredJudgement judgement =
-                            judgeGraduationRequired(profile, major.getDepartment(), plannedItemsForJudgement);
+                    GraduationAnalysisSummary summary = summaryByMajorId.get(major.getId());
+                    if (summary == null) {
+                        throw new BaseException(ErrorCode.REQUIREMENT_NOT_FOUND);
+                    }
+                    List<RequirementCourse> requirementCourses = requirementCoursesByDeptId
+                            .getOrDefault(major.getDepartment().getId(), List.of());
+                    List<RequirementCourseItem> requirementItems = requirementCourses.stream()
+                            .flatMap(rc -> requirementItemsByRequirementCourseId
+                                    .getOrDefault(rc.getId(), List.of()).stream())
+                            .toList();
+                    GraduationRequiredJudgement judgement = judgeGraduationRequired(
+                            profile, plannedItemsForJudgement, requirementCourses, requirementItems, studentCourses);
                     Set<Long> recognizedCourseIds = plannedItemsForJudgement.isEmpty()
                             ? Set.of() : loadRecognizedCourseIds(major.getDepartment());
                     GraduationAnalysisSummary effectiveSummary = plannedItemsForJudgement.isEmpty() ? summary
                             : buildAdjustedSummary(summary, plannedItemsForJudgement, major.getDepartment(),
                                     allMajorDeptIds, recognizedCourseIds);
-                    List<CertResult> certs = certResultRepository.findByStudentMajor(major);
+                    List<CertResult> certs = certsByMajorId.getOrDefault(major.getId(), List.of());
                     return new StudentMajorContext(major, effectiveSummary, judgement, certs);
                 })
                 .toList();
@@ -806,7 +836,13 @@ public class GraduationService {
     // 과목을 하나로 합쳐서 보여준다(전문실기1~6 + 맨손체조가 한 리스트에 섞여 나옴).
     private MajorCourses buildGraduationRequiredMajorCourses(StudentProfile profile, StudentMajor major) {
         // 이 드릴다운 엔드포인트는 PLANNED를 지원하지 않아(별도 스코프) 항상 COMPLETED만 반영한다.
-        GraduationRequiredJudgement judgement = judgeGraduationRequired(profile, major.getDepartment(), List.of());
+        List<RequirementCourse> requirementCourses = requirementCourseRepository
+                .findGraduationRequiredByDepartment(major.getDepartment(), profile.getAdmissionYear());
+        List<RequirementCourseItem> requirementItems = requirementCourses.isEmpty() ? List.of()
+                : requirementCourseItemRepository.findWithCourseByRequirementCourseIn(requirementCourses);
+        List<StudentCourse> studentCourses = studentCourseRepository.findWithCourseByStudentProfile(profile);
+        GraduationRequiredJudgement judgement =
+                judgeGraduationRequired(profile, List.of(), requirementCourses, requirementItems, studentCourses);
         boolean hasRequiredList = !judgement.items().isEmpty();
 
         Set<Long> requirementCourseIds = courseIdSet(judgement.items());
@@ -880,20 +916,19 @@ public class GraduationService {
     // plannedItems: source=PLANNED일 때 getGraduation()이 이미 완료/수강중 과목을 제외해 넘겨주는
     // 신규 계획 과목 목록. 드릴다운(buildGraduationRequiredMajorCourses)처럼 PLANNED를 지원하지
     // 않는 호출부는 List.of()를 넘긴다.
+    // requirementCourses/allItems/studentCourses는 호출부가 미리 조회해서 넘긴다 - 전공마다 반복
+    // 호출되는 getGraduation()에서 매번 다시 조회하지 않고 배치로 한 번만 가져오기 위함(N+1 제거).
     private GraduationRequiredJudgement judgeGraduationRequired(
-            StudentProfile profile, Department department, List<PlannerVersionItem> plannedItems) {
-        List<RequirementCourse> requirementCourses = requirementCourseRepository
-                .findGraduationRequiredByDepartment(department, profile.getAdmissionYear());
+            StudentProfile profile, List<PlannerVersionItem> plannedItems,
+            List<RequirementCourse> requirementCourses, List<RequirementCourseItem> allItems,
+            List<StudentCourse> studentCourses) {
         if (requirementCourses.isEmpty()) {
             return new GraduationRequiredJudgement(true, List.of(), 0, 0, 0, List.of(), List.of(), List.of());
         }
 
-        List<RequirementCourseItem> allItems =
-                requirementCourseItemRepository.findWithCourseByRequirementCourseIn(requirementCourses);
         Map<Long, List<RequirementCourseItem>> itemsByRequirement = allItems.stream()
                 .collect(Collectors.groupingBy(item -> item.getRequirementCourse().getId()));
 
-        List<StudentCourse> studentCourses = studentCourseRepository.findWithCourseByStudentProfile(profile);
         Set<Long> requirementCourseIds = courseIdSet(allItems);
         // course_id 매칭이 없는(직접 추가/미매칭) 과목도 rawCourseCode로 식별되면 이 졸업요건 과목으로
         // 인정한다(#218) - 과목 마스터에 아예 없는 편입학점 등은 rawCourseCode도 비어 있어 여전히

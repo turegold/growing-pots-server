@@ -23,4 +23,11 @@ public interface RequirementCourseRepository extends JpaRepository<RequirementCo
     List<RequirementCourse> findGraduationRequiredByDepartment(
             @Param("department") Department department,
             @Param("admissionYear") int admissionYear);
+
+    // 복수전공 학생의 학과들을 한 번에 조회하기 위한 배치 버전 (findGraduationRequiredByDepartment와 조건 동일).
+    @Query("SELECT rc FROM RequirementCourse rc WHERE rc.department IN :departments "
+            + "AND rc.division IS NULL AND rc.baseYear <= :admissionYear")
+    List<RequirementCourse> findGraduationRequiredByDepartmentIn(
+            @Param("departments") List<Department> departments,
+            @Param("admissionYear") int admissionYear);
 }
