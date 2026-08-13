@@ -10,4 +10,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CertResultRepository extends JpaRepository<CertResult, Long> {
     void deleteByStudentProfileAndSource(StudentProfile studentProfile, RecordSource source);
     List<CertResult> findByStudentMajor(StudentMajor studentMajor);
+    List<CertResult> findByStudentMajorIn(List<StudentMajor> studentMajors);
 }

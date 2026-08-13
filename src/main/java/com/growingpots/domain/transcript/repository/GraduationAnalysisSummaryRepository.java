@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface GraduationAnalysisSummaryRepository extends JpaRepository<GraduationAnalysisSummary, Long> {
     Optional<GraduationAnalysisSummary> findByStudentMajor(StudentMajor studentMajor);
 
+    List<GraduationAnalysisSummary> findByStudentMajorIn(List<StudentMajor> studentMajors);
+
     void deleteByStudentMajorIn(List<StudentMajor> studentMajors);
 
     // PDF를 한 번이라도 분석했는지(=진짜 온보딩 완료인지) 판단하는 용도(#221). StudentProfile이
