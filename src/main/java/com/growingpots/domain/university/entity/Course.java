@@ -110,4 +110,35 @@ public class Course extends BaseTimeEntity {
         this.isSw = isSw;
         this.isActive = isActive;
     }
+
+    // 시드 데이터 동기화(구글시트)에서 기존 과목을 갱신할 때 쓴다. isSw는 시트에 소스가 없어
+    // 여기서 건드리지 않는다 - 기존 값을 그대로 둔다.
+    public void updateFromSync(
+            String name,
+            int credit,
+            Department offeringDepartment,
+            Division defaultDivision,
+            GeArea geArea,
+            Integer recommendedYearLow,
+            Integer recommendedYearHigh,
+            OpenedSemester openedSemester,
+            boolean isEnglish,
+            boolean isActive
+    ) {
+        this.name = name;
+        this.credit = credit;
+        this.offeringDepartment = offeringDepartment;
+        this.defaultDivision = defaultDivision;
+        this.geArea = geArea;
+        this.recommendedYearLow = recommendedYearLow;
+        this.recommendedYearHigh = recommendedYearHigh;
+        this.openedSemester = openedSemester;
+        this.isEnglish = isEnglish;
+        this.isActive = isActive;
+    }
+
+    // 이번 동기화 시트에 없는(=더 이상 개설되지 않는) 기존 과목을 검색 노출에서만 제외한다.
+    public void deactivate() {
+        this.isActive = false;
+    }
 }

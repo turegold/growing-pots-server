@@ -53,6 +53,9 @@ dependencies {
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-mysql'
 	implementation 'org.apache.pdfbox:pdfbox:3.0.3'
+	// 시드 데이터 구글시트 동기화용 - 서비스 계정으로 시트를 직접 읽어온다
+	implementation 'com.google.apis:google-api-services-sheets:v4-rev20250603-2.0.0'
+	implementation 'com.google.auth:google-auth-library-oauth2-http:1.29.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 	annotationProcessor 'org.projectlombok:lombok'
