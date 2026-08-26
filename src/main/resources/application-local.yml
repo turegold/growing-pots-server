@@ -30,6 +30,14 @@ cors:
 discord:
   webhook-url: ${DISCORD_WEBHOOK_URL:}
 
+admin:
+  sync-token: local-dev-admin-token
+
+seed-data:
+  spreadsheet-id: ${SEED_DATA_SPREADSHEET_ID:1EAGkStPnvbiG_gvK-OqW57ZZ6lnnGg054uLBhDjUpNU}
+  # 파이썬 크롤러/파서 스크립트가 이미 쓰고 있는 서비스 계정 키 파일 경로를 셸 환경변수로 지정해서 재사용한다.
+  google-credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
+
 logging:
   level:
     com.growingpots: debug

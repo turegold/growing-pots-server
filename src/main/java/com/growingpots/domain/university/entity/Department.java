@@ -39,4 +39,9 @@ public class Department extends BaseTimeEntity {
         this.college = college;
         this.name = name;
     }
+
+    // 시드 데이터 동기화에서 기존 학과(school+name으로 식별)의 소속 단과대학이 바뀐 경우 갱신한다.
+    public void updateCollege(String college) {
+        this.college = college;
+    }
 }

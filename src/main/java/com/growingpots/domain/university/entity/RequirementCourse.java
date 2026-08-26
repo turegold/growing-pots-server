@@ -53,4 +53,11 @@ public class RequirementCourse extends BaseTimeEntity {
         this.minCount = minCount;
         this.minCredit = minCredit;
     }
+
+    // 시드 데이터 동기화에서 기존 요건 행(department+division+baseYear로 식별)을 갱신할 때 쓴다.
+    public void updateFromSync(String name, int minCount, int minCredit) {
+        this.name = name;
+        this.minCount = minCount;
+        this.minCredit = minCredit;
+    }
 }

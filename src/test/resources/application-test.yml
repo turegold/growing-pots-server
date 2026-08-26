@@ -28,3 +28,11 @@ jwt:
 
 app:
   base-url: http://localhost:8080
+
+admin:
+  sync-token: test-admin-sync-token
+
+# GoogleSheetsReader는 테스트에서 @MockitoBean으로 대체되어 실제로 이 값을 쓰지 않는다.
+seed-data:
+  spreadsheet-id: test-spreadsheet-id
+  google-credentials-path: test-credentials-path

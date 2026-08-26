@@ -53,3 +53,12 @@ sentry:
   dsn: ${SENTRY_DSN:}
   environment: ${spring.profiles.active}
   send-default-pii: false
+
+# 구글시트 기반 시드 데이터(과목/학과 등) 동기화. Apps Script의 "DB 반영" 트리거가
+# sync-token을 헤더로 실어 호출하면, 서버가 서비스 계정으로 시트를 직접 읽어온다.
+admin:
+  sync-token: ${ADMIN_SYNC_TOKEN:}
+
+seed-data:
+  spreadsheet-id: ${SEED_DATA_SPREADSHEET_ID:}
+  google-credentials-path: ${GOOGLE_SHEETS_CREDENTIALS_PATH:}
